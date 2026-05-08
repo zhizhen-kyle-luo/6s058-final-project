@@ -8,8 +8,11 @@
 \usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{multirow}
+\usepackage{placeins}
 \usepackage[breaklinks,colorlinks]{hyperref}
 \usepackage[capitalize]{cleveref}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
 
 \crefname{section}{Sec.}{Secs.}
 \Crefname{section}{Section}{Sections}
@@ -27,7 +30,7 @@
 
 \begin{document}
 
-\title{Dynamic Tanh as a LayerNorm Replacement for Transformer-Based Semantic Segmentation}
+\title{Post-Hoc Dynamic Tanh: LayerNorm Replacement in Pretrained Transformer Encoders for Classification and Semantic Segmentation}
 
 \author{Kyle Luo\\
 Massachusetts Institute of Technology\\
@@ -37,34 +40,35 @@ Massachusetts Institute of Technology\\
 \maketitle
 
 \begin{abstract}
-Layer normalization is treated as a standard component of modern transformer architectures, including transformer-based semantic segmentation models. Recent work on Dynamic Tanh (DyT) challenges this convention by showing that a learnable element-wise tanh transformation can replace normalization layers in several transformer settings. However, dense prediction is a stricter test than image-level recognition: semantic segmentation requires spatially precise multiscale features and reliable per-pixel predictions. This project evaluates whether DyT can replace LayerNorm in a transformer-based segmentation pipeline. I use SegFormer-B0 in MMSegmentation as a controlled baseline and compare it with variants in which the transformer backbone LayerNorm layers are replaced by DyT. The planned evaluation measures validation mean Intersection over Union, convergence behavior, qualitative mask quality, and activation behavior under a shortened training budget. [Placeholder: replace this final sentence with the actual main result once experiments finish.]
+Dynamic Tanh (DyT) is a learnable element-wise replacement for transformer normalization layers that has been validated when trained from initialization. We study a different regime: replacing LayerNorm with DyT inside a LayerNorm-pretrained vision encoder, then fine-tuning on a downstream task. We test this post-hoc replacement in two domains: ViT-B/16 fine-tuned on CIFAR-100 and SegFormer-B0 fine-tuned on a 2000-image ADE20K subset. We compare the DyT default initialization ($\gamma{=}\mathbf{1}$, $\beta{=}\mathbf{0}$, $\alpha_0{=}0.5$) with one post-hoc adaptation: copying the pretrained LayerNorm affine parameters into DyT's $\gamma$ and $\beta$ at replacement time. On CIFAR-100, affine preservation improves post-hoc DyT from 4.50\% to 48.32\% top-1, but remains far below the 92.91\% LayerNorm baseline. On ADE20K-subset segmentation, both DyT variants fail near a rough chance scale, reaching 0.0138 and 0.0099 mIoU versus 0.0765 for LayerNorm. These results show that full post-hoc DyT replacement is not a safe drop-in substitute for pretrained vision encoders, and that its failure mode depends on the downstream task. Code: \url{https://github.com/zhizhen-kyle-luo/6s058-final-project}.
 \end{abstract}
-
 \section{Introduction}
 \label{sec:intro}
 
-Transformer-based models have become standard components of modern computer vision systems, including image classification, semantic segmentation, and other dense prediction tasks~\cite{dosovitskiy2021vit,xie2021segformer}. These models commonly inherit the same transformer block structure: attention, feed-forward layers, residual connections, and normalization. LayerNorm is especially central to this design, and it is often treated as a default part of the transformer stack rather than as a component whose necessity should be tested for each visual task.
+Transformer-based models have become standard components of modern computer vision systems, including image classification, semantic segmentation, and other dense prediction tasks~\cite{dosovitskiy2021vit,xie2021segformer}. These models commonly inherit the same transformer block structure~\cite{vaswani2017attention}: attention, feed-forward layers, residual connections, and normalization. LayerNorm is especially central to this design, and it is often treated as a default part of the transformer stack rather than as a component whose necessity should be tested for each visual task.
 
 Recent work challenges this assumption. Zhu et al.~\cite{zhu2025dyt} propose Dynamic Tanh (DyT), a learnable element-wise transformation that replaces transformer normalization layers without computing sample-wise means or variances. DyT is introduced as a drop-in replacement for LayerNorm or RMSNorm, and the authors validate it across settings ranging from recognition to generation, supervised to self-supervised learning, and computer vision to language models~\cite{zhu2025dyt}. This suggests that some of LayerNorm's practical role may be reproduced by a simpler bounded nonlinearity.
 
-The DyT paper reports broad transformer results, but it does not specifically study semantic segmentation~\cite{zhu2025dyt}. Transformer segmentation models in turn retain normalization as a standard backbone component without testing whether it is necessary~\cite{xie2021segformer,cheng2022mask2former}. Whether DyT can replace LayerNorm in a transformer-based segmentation backbone is therefore open.
+The DyT paper reports broad transformer results, but in every reported experiment DyT is in the network from the start of training~\cite{zhu2025dyt}. It does not test the post-hoc workflow common in applied computer vision: start from a public LayerNorm-pretrained backbone, replace its LayerNorm modules, and fine-tune on a downstream task. This kind of normalization surgery is plausible. Heimersheim~\cite{heimersheim2024remove} shows that LayerNorm can be removed from GPT-2 by fine-tuning. No analogous test exists for DyT in a pretrained vision transformer.
 
-This matters because semantic segmentation, a dense prediction task that assigns a class label to each pixel without distinguishing separate instances of the same class~\cite{torralba2024foundations}, places different demands on encoder representations than image classification. Ranftl et al.~\cite{ranftl2021dpt} observe that feature resolution and granularity, which can be discarded in classification, are critical for dense prediction. A LayerNorm replacement validated on classification therefore tests something different from one validated on segmentation: the encoder must produce features that retain spatial granularity and combine information across scales rather than only supporting a single global prediction.
+This regime matters because most computer vision applications do not train from scratch. The dominant practice is to download a public pretrained checkpoint and fine-tune it on a downstream task~\cite{kornblith2019better,kolesnikov2020bit}. A normalization replacement that only works under from-scratch training therefore reaches a much narrower audience than one that survives this workflow. Additionally, semantic segmentation remains untested by the DyT paper. Semantic segmentation is a dense prediction task that assigns a class label to each pixel without distinguishing separate instances of the same class~\cite{long2015fcn,torralba2024foundations}, and Ranftl et al.~\cite{ranftl2021dpt} observe that feature resolution and granularity, which can be discarded in classification, are critical for dense prediction. Evaluating DyT in both classification and segmentation therefore widens the test beyond image-level recognition.
 
-This project evaluates whether DyT can replace LayerNorm in a transformer-based semantic segmentation backbone. I use SegFormer-B0~\cite{xie2021segformer} as the testbed, replacing backbone LayerNorm modules with DyT while keeping the segmentation head and training setup fixed. I evaluate segmentation quality using mIoU alongside convergence curves, qualitative masks, and activation saturation behavior. [Placeholder: insert one to two sentences previewing headline findings once experiments are complete.]
+This work evaluates whether DyT can replace LayerNorm in this fine-tune-time regime, in two pretrained vision encoders: ViT-B/16~\cite{dosovitskiy2021vit} fine-tuned on CIFAR-100~\cite{krizhevsky2009cifar100}, and SegFormer-B0~\cite{xie2021segformer} fine-tuned on an ADE20K subset~\cite{zhou2017ade20k}. In each setting we compare three variants: the LayerNorm baseline, DyT default (Algorithm~1 of~\cite{zhu2025dyt}), and a single proposed adaptation that copies the pretrained LayerNorm affine parameters into DyT's $\gamma$ and $\beta$ at the moment of replacement. Evaluation pairs the downstream metric (top-1 accuracy or mIoU) with convergence curves, per-layer trained $\alpha$, and DyT activation saturation. Empirically, affine preservation closes roughly half of the post-hoc gap on classification but not on segmentation, where both DyT variants fail; this asymmetry suggests that dense prediction is more sensitive than image-level recognition to the loss of LayerNorm's sample-wise normalization.
 
-The project makes three contributions. First, it provides a direct dense-prediction test of DyT rather than only considering image-level recognition. Second, it separates full-backbone replacement from targeted replacement around attention and feed-forward sublayers. Third, it reports not only final segmentation accuracy but also optimization and feature-level diagnostics.
+This work makes three main contributions. First, it investigates whether DyT can replace LayerNorm inside a pretrained transformer encoder rather than being used only during training from scratch. Second, it extends DyT evaluation to semantic segmentation, a dense-prediction task not considered in the original DyT paper, while also testing image classification. Third, it proposes a minimal initialization strategy that transfers the pretrained LayerNorm affine parameters directly to DyT's $\gamma$ and $\beta$, allowing the replacement to preserve part of the pretrained normalization structure.
+
+
 
 \section{Related Work}
 \label{sec:related}
 
-\subsection{Transformer-Based Dense Prediction}
+\subsection{Transformer Backbones for Vision}
 
-Modern semantic segmentation typically uses transformer backbones inherited from image recognition. Vision Transformers showed that pure transformer encoders can match convolutional networks on image classification~\cite{dosovitskiy2021vit}. Subsequent work adapted them for pixel-level prediction: SegFormer pairs a hierarchical transformer encoder with a lightweight MLP decoder for efficient semantic segmentation~\cite{xie2021segformer}, and Mask2Former uses masked attention as a unified architecture for semantic, instance, and panoptic segmentation~\cite{cheng2022mask2former}. Both retain LayerNorm as a default component of the transformer backbone, providing the architectural setting for this project.
+Vision Transformers showed that pure transformer encoders can match convolutional networks on image classification when pretrained at sufficient scale~\cite{dosovitskiy2021vit}. Subsequent work adapted transformer architectures for pixel-level prediction: SegFormer pairs a hierarchical transformer encoder with a lightweight MLP decoder for efficient semantic segmentation~\cite{xie2021segformer}, and Mask2Former uses masked attention as a unified architecture for semantic, instance, and panoptic segmentation~\cite{cheng2022mask2former}. All of these models retain LayerNorm as a default in their transformer components. This work adopts ViT-B/16 and SegFormer-B0 as testbeds; neither has been evaluated with DyT.
 
 \subsection{Normalization in Transformers}
 
-LayerNorm normalizes hidden features within each example, removing the dependence on batch statistics used by earlier methods such as Batch Normalization~\cite{ba2016layernorm}. It became a standard component of transformer blocks, where it is used with residual connections, attention layers, and feed-forward sublayers~\cite{vaswani2017attention}. Later work shows that the details of normalization matter. RMSNorm removes mean-centering while retaining re-scaling, suggesting that not all parts of LayerNorm are equally necessary~\cite{zhang2019rmsnorm}. Analyses of Pre-LN and Post-LN transformers show that normalization placement affects gradient behavior and training stability~\cite{xiong2020layernorm}. These studies treat normalization as an architectural design choice rather than a fixed component, but they do not address whether normalization can be replaced entirely in dense prediction settings.
+LayerNorm normalizes hidden features within each example, removing the dependence on batch statistics used by earlier methods such as Batch Normalization~\cite{ioffe2015batchnorm,ba2016layernorm}. It became a standard component of transformer blocks, where it is used with residual connections, attention layers, and feed-forward sublayers~\cite{vaswani2017attention}. Later work shows that the details of normalization matter. RMSNorm removes mean-centering while retaining re-scaling, suggesting that not all parts of LayerNorm are equally necessary~\cite{zhang2019rmsnorm}. Analyses of Pre-LN and Post-LN transformers show that normalization placement affects gradient behavior and training stability~\cite{xiong2020layernorm}. These studies treat normalization as a design choice rather than a fixed component. Each modifies normalization rather than removing or replacing it outright.
 
 \subsection{Dynamic Tanh and Normalization-Free Transformers}
 
@@ -73,182 +77,258 @@ Dynamic Tanh replaces transformer normalization with a learnable bounded nonline
     \dyt(x) = \gamma \odot \tanh(\alpha x) + \beta,
     \label{eq:dyt}
 \end{equation}
-where $\alpha$ is a learnable scalar and $\gamma,\beta$ are learnable affine parameters. Unlike LayerNorm, DyT does not compute a sample-wise mean or variance. Instead, it uses a bounded element-wise nonlinearity followed by learned scaling and shifting.
+where $\alpha$ is a learnable scalar and $\gamma, \beta$ are learnable affine parameters. Unlike LayerNorm, DyT does not compute a sample-wise mean or variance. Instead, it uses a bounded element-wise nonlinearity followed by learned scaling and shifting.
 
-The motivation for DyT is that trained LayerNorm modules in transformers often exhibit tanh-like input-output behavior~\cite{zhu2025dyt}. Zhu et al. show that replacing normalization layers with DyT can preserve strong performance across several transformer settings, challenging the assumption that normalization is indispensable. This project builds on that result by testing the same replacement in a transformer backbone used for semantic segmentation.
+The motivation for DyT is that trained LayerNorm modules in transformers often exhibit tanh-like input-output behavior~\cite{zhu2025dyt}. Zhu et al.\ show that replacing normalization layers with DyT can match or exceed normalized counterparts across several transformer settings, challenging the assumption that normalization is indispensable. Heimersheim~\cite{heimersheim2024remove} shows that LayerNorm can be removed from a pretrained GPT-2 by fine-tuning, providing one instance of post-pretraining normalization surgery in the language-model setting. This work adopts the DyT formulation directly to test the analogous question in pretrained vision transformer encoders.
 
-\section{Methodology}
+\section{Method}
 \label{sec:method}
 
-\subsection{Baseline model}
-\label{subsec:baseline}
+The methodology is a controlled post-hoc intervention on pretrained models. Rather than training a DyT transformer from initialization, we start from a LayerNorm-pretrained checkpoint, replace the relevant LayerNorm modules, and fine-tune the modified model on the same downstream data as the unmodified baseline. This setup directly tests the practitioner-facing question from the introduction: whether DyT can be inserted into a model that was not originally trained with DyT. The comparison is intentionally narrow. Within each task, the LayerNorm baseline and both DyT variants share the same data, optimizer, training length, and evaluation procedure, so performance differences can be attributed primarily to the normalization replacement and DyT initialization. \Cref{fig:method} summarizes the workflow.
 
-I use SegFormer-B0 because its hierarchical transformer encoder contains the backbone LayerNorm sites under study, while its lightweight MLP decoder can be held fixed across variants~\cite{xie2021segformer}. This makes the experiment a backbone-level normalization replacement study rather than a decoder-design comparison.
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=0.55cm, every node/.style={font=\small},
+  box/.style={draw, rounded corners, minimum width=3.0cm, minimum height=0.7cm, align=center},
+]
+\node[box, fill=blue!10] (ckpt) {Pretrained checkpoint};
+\node[box, fill=gray!15, below=of ckpt] (ln) {LayerNorm modules};
+\node[box, fill=orange!15, below left=0.7cm and -0.6cm of ln] (d1)
+  {DyT default\\$\gamma{=}\mathbf{1},\beta{=}\mathbf{0},\alpha_0{=}0.5$};
+\node[box, fill=orange!15, below right=0.7cm and -0.6cm of ln] (d2)
+  {DyT affine\\$\gamma{\leftarrow}\gamma_\mathrm{LN},\beta{\leftarrow}\beta_\mathrm{LN},\alpha_0{=}0.5$};
+\node[box, fill=green!10, below=2.3cm of ln] (ft) {Fine-tune all parameters};
+\draw[->] (ckpt) -- (ln);
+\draw[->] (ln.south) -- (d1.north);
+\draw[->] (ln.south) -- (d2.north);
+\draw[->] (d1) |- (ft);
+\draw[->] (d2) |- (ft);
+\end{tikzpicture}
+\caption{Post-hoc replacement workflow. Each LayerNorm module in the pretrained encoder is swapped before any optimizer step with one of two DyT initializations, DyT default or DyT affine. The same downstream fine-tuning recipe is then applied for both DyT variants and an unmodified LayerNorm baseline.}
+\label{fig:method}
+\end{figure}
 
-In the MMSegmentation~\cite{mmseg2020} SegFormer setup, the transformer backbone contains the LayerNorm modules under study, while the decode head is implemented with convolutional projection and normalization specified through \texttt{norm\_cfg}. I therefore restrict the replacement to backbone LayerNorm sites and keep the decode head fixed in all variants.
+\subsection{Post-hoc replacement and backbones}
+\label{subsec:posthoc}
 
-[Placeholder: specify exact MMSegmentation config name, pretrained checkpoint, image crop size, batch size, optimizer, learning rate, and training iterations after implementation.]
+Zhu et al. validate DyT only when it is present from the start of training or pretraining~\cite{zhu2025dyt}; they do not swap DyT into an existing LayerNorm checkpoint. We isolate this post-hoc setting: each variant starts from a public pretrained checkpoint, performs the LayerNorm-to-DyT replacement before the first optimizer step, and then fine-tunes all parameters on the downstream task. This tests whether downstream fine-tuning can absorb the changed normalization map while the rest of the pretrained weights start unchanged.
+
+We use ViT-B/16~\cite{dosovitskiy2021vit} for classification, fine-tuned on CIFAR-100~\cite{krizhevsky2009cifar100}, loaded from \texttt{google/vit-base-patch16-224} through HuggingFace Transformers~\cite{wolf2020transformers}. CIFAR-100 is a feasible anchor under our single-GPU budget; the full ImageNet-1K from-init experiments Zhu et al. report in their Table~1 are infeasible in this regime. ViT-B/16 keeps the model axis aligned with the original DyT evaluation. We do not test DeiT (same architecture as ViT, different pretraining recipe) or ConvNeXt (CNN, out of scope for LN-in-transformer replacement).
+
+For segmentation we use SegFormer-B0~\cite{xie2021segformer} with the MiT-B0 encoder, loaded from \texttt{nvidia/mit-b0}, fine-tuned on a fixed-seed ADE20K~\cite{zhou2017ade20k} subset that preserves ADE20K's 150-class semantic diversity at one-tenth the training data. Full ADE20K with the official 160k-iteration SegFormer recipe~\cite{xie2021segformer,mmseg2020} is outside budget. PASCAL VOC trades semantic diversity for speed, and Cityscapes' high-resolution urban scenes amplify compute cost without adding scope to a normalization study.
+
+The replacement walks \texttt{model.named\_modules()} and substitutes every \texttt{nn.LayerNorm} under a task-specific prefix: \texttt{vit.} for ViT and \texttt{segformer.encoder.} for SegFormer. The ViT prefix matches 25 LayerNorms: 24 inside the transformer blocks plus the final pre-classifier \texttt{vit.layernorm}. The SegFormer prefix matches 30 LayerNorms across the MiT-B0 encoder: patch embeddings, transformer blocks, stage outputs, and spatial-reduction modules. We do not exclude any LayerNorm by choice: the ViT classifier head is a single \texttt{Linear} with no normalization, and SegFormer's all-MLP decode head uses BatchNorm rather than LayerNorm~\cite{xie2021segformer}, so the encoder prefix already covers every LayerNorm in either model.
 
 \subsection{LayerNorm and Dynamic Tanh}
 \label{subsec:dyt}
 
-For an input feature vector $x \in \mathbb{R}^d$, LayerNorm computes a normalized representation using the feature-wise mean and variance of that sample:
+For an input feature vector $x \in \mathbb{R}^d$, LayerNorm normalizes along the channel dimension using the sample's mean and variance:
 \begin{equation}
     \lnorm(x) = \gamma \odot \frac{x - \mu(x)}{\sqrt{\sigma^2(x) + \epsilon}} + \beta.
     \label{eq:ln}
 \end{equation}
-DyT removes the sample-wise normalization step and instead applies the bounded transformation in \cref{eq:dyt}. In this project, DyT is implemented as a PyTorch module with one learnable scalar $\alpha$ and one learnable affine pair $(\gamma,\beta)$ per channel. The initial value of $\alpha$ is set to [placeholder: e.g., $0.5$], following the practical recommendation from the DyT formulation unless tuning suggests otherwise.
+The constant $\epsilon$ prevents division by zero when a layer's input has near-zero variance. We do not set $\epsilon$ ourselves. Each checkpoint ships its own value, and we inherit it: $10^{-12}$ for \texttt{google/vit-base-patch16-224}, $10^{-6}$ for \texttt{nvidia/mit-b0}. DyT (\cref{eq:dyt}) replaces this sample-wise normalization, with the per-channel $\gamma, \beta$ taking the same shape as in \cref{eq:ln} and no $\epsilon$ because no division occurs.
 
-The intended implementation is a drop-in replacement: wherever the SegFormer backbone uses LayerNorm on channel dimension $C$, the DyT variant uses a DyT module with the same feature dimension. This keeps the parameter count nearly unchanged and avoids changing the decoder, optimizer, or data pipeline. Because DyT is bounded, it may suppress outliers and regulate activation scale without explicitly enforcing zero mean or unit variance. However, this same boundedness may also saturate features, which could damage dense prediction if small spatial details require high-resolution feature variation.
+\subsection{Two initializations: DyT default and DyT affine}
+\label{subsec:init}
 
-\subsection{Ablation variants}
-\label{subsec:ablations}
+Algorithm~1 of Zhu et al.~\cite{zhu2025dyt} initializes DyT with $\gamma = \mathbf{1}$, $\beta = \mathbf{0}$, and $\alpha = 0.5$. In a post-hoc checkpoint, downstream weights were trained against the LayerNorm affine output $\gamma_{\mathrm{LN}}, \beta_{\mathrm{LN}}$. Resetting those parameters changes both the normalization map and its learned affine range.
 
-I consider three model variants:
-\begin{enumerate}
-    \item \textbf{LN baseline}: the original SegFormer-B0 model with LayerNorm in the transformer backbone.
-    \item \textbf{Full-backbone DyT}: all backbone LayerNorm layers are replaced by DyT.
-    \item \textbf{Attention-side DyT}: only the LayerNorm layers immediately preceding attention sublayers are replaced by DyT, while feed-forward LayerNorm layers remain unchanged.
-\end{enumerate}
-
-[Optional placeholder: if time permits, add an FFN-side DyT variant that replaces only the LayerNorm layers preceding feed-forward sublayers.] The attention-side ablation is included because normalization before attention may affect the scale and distribution of queries and keys, while feed-forward sublayers may respond differently to bounded activations. Separating these sites makes the project more informative than a single all-or-nothing replacement.
-
-\subsection{Evaluation metrics and diagnostics}
-\label{subsec:metrics}
-
-The primary metric is validation mean Intersection over Union (mIoU), the standard summary metric for semantic segmentation. For each class $c$, IoU is
-\begin{equation}
-    \mathrm{IoU}_c = \frac{\mathrm{TP}_c}{\mathrm{TP}_c + \mathrm{FP}_c + \mathrm{FN}_c},
-\end{equation}
-and mIoU averages this quantity across classes. Endpoint mIoU measures final segmentation quality, but this project also tracks optimization behavior because a normalization replacement may affect convergence before it affects final accuracy.
-
-The planned diagnostics are:
+We therefore study two DyT initializations in the post-hoc regime:
 \begin{itemize}
-    \item training loss versus iteration,
-    \item validation mIoU versus iteration,
-    \item qualitative segmentation masks for a fixed validation image set,
-    \item DyT activation saturation rate, measured as the fraction of activations for which $|\tanh(\alpha x)|$ is close to one,
-    \item (optional) gradient norms for selected backbone stages.
+    \item DyT default: $\gamma = \mathbf{1}$, $\beta = \mathbf{0}$, $\alpha = 0.5$, exactly as Algorithm~1. Zhu et al. report from-init training to be insensitive to $\alpha_0$ in $[0.5, 1.2]$ (their Figure~9), so we hold $\alpha_0 = 0.5$ in this paper rather than sweep it.
+    \item DyT affine: $\gamma \leftarrow \gamma_{\mathrm{LN}}$, $\beta \leftarrow \beta_{\mathrm{LN}}$, $\alpha = 0.5$. The LayerNorm \texttt{weight} and \texttt{bias} tensors are copied into DyT's $\gamma$ and $\beta$; $\alpha$ has no LayerNorm analog and stays at the default.
 \end{itemize}
-These diagnostics allow a more careful interpretation of outcomes. For example, a small mIoU drop with stable convergence would suggest that DyT is viable but slightly weaker under short training, while unstable loss curves or strong saturation would suggest a more fundamental mismatch with dense prediction.
+
+These two DyT variants are compared against an unmodified LayerNorm baseline on each of the two tasks, for six runs total.
 
 \section{Experimental Setup}
 \label{sec:setup}
 
-\subsection{Dataset}
+\subsection{Datasets}
 \label{subsec:dataset}
 
-The intended dataset is ADE20K, a widely used semantic segmentation benchmark for scene parsing~\cite{zhou2017ade20k}. ADE20K is appropriate because it contains diverse object and stuff categories and is commonly used in SegFormer evaluations~\cite{xie2021segformer}. The primary experiments use a shortened training schedule rather than the full benchmark schedule, since the goal is a controlled class-project comparison under limited compute rather than a full reproduction of published leaderboard results.
+\noindent Classification. CIFAR-100~\cite{krizhevsky2009cifar100} is loaded from \texttt{uoft-cs/cifar100} through HuggingFace Datasets~\cite{lhoest2021datasets}.
 
-[Placeholder: state whether the final experiments use full ADE20K, an ADE20K subset, or PASCAL VOC fallback. Also specify number of training/validation images actually used.]
+\noindent Segmentation. ADE20K~\cite{zhou2017ade20k} is loaded from the \texttt{merve/scene\_parse\_150} HuggingFace mirror through HuggingFace Datasets~\cite{lhoest2021datasets}. The subset uses 2000 train images and 500 validation images, drawn at fixed seed; all segmentation variants share the same indices.
 
-\subsection{Training protocol}
+\subsection{Training setup}
 \label{subsec:training}
 
-All model variants are trained under matched settings whenever possible. The decoder, data augmentation, optimizer, learning-rate schedule, image resolution, batch size, and number of iterations are held fixed across the LN and DyT variants. This is important because the research question concerns the effect of the normalization replacement, not a broad model redesign.
+The training setup is designed for controlled within-task comparison rather than for a maximally tuned benchmark. Each task is run in three configurations: a LayerNorm baseline, DyT default, and DyT affine. Within a task, these configurations use the same seed (42), data subset, optimizer, learning-rate decay rule, augmentation policy, and evaluation cadence. The intended differences are only the normalization module and, for DyT, the initialization.
 
-[Placeholder: add concrete hyperparameters: optimizer, base learning rate, weight decay, warmup, crop size, batch size, number of GPUs, total iterations, validation interval, random seed, AMP setting, and checkpoint source.]
+The per-task fine-tuning recipes are listed in \cref{tab:protocol}. We use one learning rate per task and do not tune it separately for each configuration, so the comparison isolates the normalization replacement rather than per-configuration hyperparameter search. These are shortened fine-tuning runs for within-task comparison, not reproductions of the from-initialization ImageNet experiments in the original DyT evaluation~\cite{zhu2025dyt}.
 
-If ImageNet-pretrained SegFormer-B0 weights are used, matching non-normalization weights are loaded from the original checkpoint, while DyT parameters are newly initialized. This choice makes the experiment a controlled replacement study rather than a full training-from-scratch comparison. [Placeholder: confirm whether pretrained weights are used in the final runs.]
-
-\subsection{Compute environment}
-\label{subsec:compute}
-
-[Placeholder: report hardware and runtime. Example: Experiments were run on one NVIDIA GPU with mixed precision enabled. Each short run required approximately X GPU-hours. Total project compute was approximately Y GPU-hours.] Reporting compute is useful both for reproducibility and for honest interpretation of shortened schedules.
-
-\section{Results}
-\label{sec:results}
-
-This section will be finalized after the experiments are complete. The current structure is included so that the coding outputs map directly into the paper.
-
-\subsection{Main quantitative comparison}
-\label{subsec:main_results}
-
-\begin{table}[t]
+\begin{table}[!htbp]
 \centering
 \small
-\caption{Main segmentation results. The comparison is between matched short-schedule LayerNorm and DyT variants, not against published full-schedule benchmark numbers.}
-\label{tab:main}
-\begin{tabular}{p{0.24\linewidth}p{0.24\linewidth}ccc}
+\caption{Training setup per task. AdamW~\cite{loshchilov2019adamw}, cross-entropy loss, and mixed precision are shared across both. Image normalization uses each checkpoint's HuggingFace preprocessor configuration.}
+\label{tab:protocol}
+\begin{tabular}{lll}
 \toprule
-Model & Replacement & mIoU $\uparrow$ & Loss & Notes \\
+& Classification & Segmentation \\
 \midrule
-LN baseline & None & [--] & [--] & [--] \\
-DyT full & All backbone LN & [--] & [--] & [--] \\
-DyT attention & Attention-side LN & [--] & [--] & [--] \\
-DyT FFN (optional) & FFN-side LN & [--] & [--] & [if done] \\
+Iterations & 3000 & 5000 \\
+Batch size & 64 & 4 \\
+Crop & 224 & $512{\times}512$ \\
+Learning rate & $5{\times}10^{-5}$ & $6{\times}10^{-5}$ \\
+Weight decay & 0.01 & 0.01 \\
+Warmup iters & 200 & 200 \\
+LR decay & cosine & poly ($p{=}1.0$) \\
+Eval cadence & every 500 & every 500 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-[Placeholder: write 1--2 paragraphs interpreting \cref{tab:main}.]
+Train loaders shuffle to avoid a fixed data order and drop the final incomplete batch so every optimizer step has the same batch size. Validation loaders do not shuffle because the reported metrics are order-invariant. We use standard augmentations for each task: random resized crops and horizontal flips for CIFAR-100, and random scale/crop, horizontal flips, and color jitter for ADE20K. At validation time, classification uses a fixed center crop, while segmentation uses a fixed resize/crop and upsamples logits to label resolution before scoring. Pixels labeled 255 are ignored.
 
-\subsection{Optimization behavior}
+All runs use Colab Pro on a single NVIDIA A100-SXM4-80GB with PyTorch~\cite{paszke2019pytorch} automatic mixed precision.
+
+To support reproducibility, the accompanying notebook records the checkpoint identifiers, replacement prefixes, dataset subset sizes, fixed seed, and run configurations used to generate the tables and figures. Each completed run also saves its configuration, training log, and summary metrics.\footnote{Code and run logs: \url{https://github.com/zhizhen-kyle-luo/6s058-final-project}} This is important for this project because the main claim is a negative comparison: without the shared run settings and logs, a DyT failure could be mistaken for an implementation or tuning artifact.
+
+\subsection{Evaluation metrics and diagnostics}
+\label{subsec:metrics}
+
+For classification, we use top-1 accuracy for single-label image classification~\cite{torralba2024foundations}. Let $y_i$ be the ground-truth class for validation image $i$ and let $s_{i,c}$ be the model score for class $c$. The reported percentage is $100 \times \mathrm{Top}\mbox{-}1$, where
+\begin{equation}
+    \mathrm{Top}\mbox{-}1 =
+    \frac{1}{N}\sum_{i=1}^{N}
+    \mathbf{1}\!\left[\arg\max_c s_{i,c} = y_i\right].
+    \label{eq:top1}
+\end{equation}
+For segmentation, we use the standard mean-IU/mIoU metric for semantic segmentation~\cite{long2015fcn}. For class $c$, with true positives $\mathrm{TP}_c$, false positives $\mathrm{FP}_c$, and false negatives $\mathrm{FN}_c$ accumulated over the validation set,
+\begin{equation}
+\begin{aligned}
+    \mathrm{IoU}_c &=
+    \frac{\mathrm{TP}_c}{\mathrm{TP}_c + \mathrm{FP}_c + \mathrm{FN}_c},\\
+    \miou &= \frac{1}{C}\sum_{c=1}^{C}\mathrm{IoU}_c .
+\end{aligned}
+    \label{eq:miou}
+\end{equation}
+Here $C=150$ for ADE20K, and pixels labeled 255 are ignored. We compute the counts with a streaming confusion matrix. Training loss is logged every 50 iterations and validation metrics every 500 iterations. For DyT runs we also record:
+\begin{itemize}
+    \item the final learned $\alpha$ scalar for each DyT layer;
+    \item the fraction of recorded activations satisfying $|\tanh(\alpha x)| > 0.95$, averaged per layer.
+\end{itemize}
+
+\FloatBarrier
+\section{Results}
+\label{sec:results}
+
+The results answer three questions. First, full post-hoc DyT replacement does not preserve the LayerNorm baseline. Second, copying the pretrained LayerNorm affine parameters helps classification but not segmentation. Third, the diagnostics do not point to a single failure mode across tasks. All numbers are from a single seed per configuration; the LayerNorm-versus-DyT gaps dwarf plausible seed variance, but the small within-DyT differences on segmentation should be read with this caveat.
+
+\subsection{Classification}
+\label{subsec:cls_results}
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{CIFAR-100 fine-tune results for ViT-B/16. All variants share the same protocol; only the normalization module and DyT initialization differ.}
+\label{tab:cls}
+\begin{tabular}{lc}
+\toprule
+Variant & Top-1 (\%) $\uparrow$ \\
+\midrule
+LayerNorm baseline & 92.91 \\
+DyT default ($\gamma{=}\mathbf{1}, \beta{=}\mathbf{0}, \alpha_0{=}0.5$) & 4.50 \\
+DyT affine ($\gamma{\leftarrow}\gamma_\mathrm{LN}, \beta{\leftarrow}\beta_\mathrm{LN}, \alpha_0{=}0.5$) & 48.32 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:cls} shows a split result. DyT default nearly fails on CIFAR-100, while DyT affine becomes a nontrivial classifier. This suggests that the affine reset is an important part of the ViT failure mode. However, DyT affine remains far below the LayerNorm baseline, so preserving $\gamma$ and $\beta$ alone does not make full post-hoc DyT replacement viable.
+
+\FloatBarrier
+\subsection{Segmentation}
+\label{subsec:seg_results}
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption{ADE20K-subset fine-tune results for SegFormer-B0. All variants use the same 2000-image training subset, 500-image validation subset, and training recipe; the mIoU values are not intended as full ADE20K benchmark numbers.}
+\label{tab:seg}
+\begin{tabular}{lc}
+\toprule
+Variant & mIoU $\uparrow$ \\
+\midrule
+LayerNorm baseline & 0.0765 \\
+DyT default ($\gamma{=}\mathbf{1}, \beta{=}\mathbf{0}, \alpha_0{=}0.5$) & 0.0138 \\
+DyT affine ($\gamma{\leftarrow}\gamma_\mathrm{LN}, \beta{\leftarrow}\beta_\mathrm{LN}, \alpha_0{=}0.5$) & 0.0099 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:seg} shows a different pattern from classification. As a reference, under uniform random class predictions over $C=150$ ADE20K classes with balanced class proportions $p_c \approx 1/C$, per-class IoU is $p_c/(1 + p_c(C-1)) \approx 1/(2C)$, so chance mIoU is roughly $1/(2C) \approx 0.0033$. Both DyT variants sit within a small constant of this floor: DyT default at 0.0138 and DyT affine at 0.0099 are $\approx 3$--$4\times$ chance, while the LayerNorm baseline at 0.0765 is $\approx 23\times$ chance. Copying the pretrained affine parameters does not improve segmentation, so the classification recovery does not transfer to dense prediction. This suggests that the SegFormer failure is not explained by the same affine-reset effect observed in ViT. The absolute mIoU values should be read cautiously because the ADE20K split is small and the decode head is trained from scratch, but the shared protocol still shows a clear gap between LayerNorm and both DyT variants.
+
+\FloatBarrier
+\subsection{Optimization curves}
 \label{subsec:curves}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\fbox{\rule{0pt}{1.2in}\rule{0.95\linewidth}{0pt}}
-\caption{Placeholder for training loss curves comparing LN, full DyT, and attention-side DyT.}
-\label{fig:loss_curve}
-\end{figure}
+\includegraphics[width=0.48\linewidth]{figures/classification_loss.pdf}\hfill
+\includegraphics[width=0.48\linewidth]{figures/classification_top1.pdf}\\[0.5em]
+\includegraphics[width=0.48\linewidth]{figures/segmentation_loss.pdf}\hfill
+\includegraphics[width=0.48\linewidth]{figures/segmentation_miou.pdf}
+\caption{Training loss and validation metric versus iteration. Top row: classification loss and top-1. Bottom row: segmentation loss and mIoU.}
+\label{fig:curves}
+\end{figure*}
 
-\begin{figure}[t]
+\Cref{fig:curves} shows that the endpoint gaps reflect different training dynamics. In classification, the LayerNorm model completes most of its fine-tuning by the first validation checkpoint, while DyT default stays near the random cross-entropy scale for CIFAR-100 ($\log 100 \approx 4.61$) and barely improves in top-1. Affine preservation changes the trajectory: validation accuracy rises throughout training, indicating that copying $\gamma$ and $\beta$ makes the post-hoc ViT optimization problem less stuck, although still far from the LayerNorm baseline.
+
+Segmentation behaves differently. The LayerNorm run improves steadily in mIoU over the full schedule, whereas both DyT variants make only small early gains and remain near chance. Their training losses still move and fluctuate, so the failure is not a clean numerical divergence. Instead, the models appear able to reduce pixelwise cross-entropy somewhat without learning segmentations that improve class-level overlap. This mismatch between loss and mIoU is consistent with a dense-prediction failure rather than a simple need for more iterations.
+
+\subsection{Per-layer $\alpha$ and DyT saturation}
+\label{subsec:alpha_drift}
+
+\begin{figure*}[t]
 \centering
-\fbox{\rule{0pt}{1.2in}\rule{0.95\linewidth}{0pt}}
-\caption{Placeholder for validation mIoU curves.}
-\label{fig:miou_curve}
-\end{figure}
+\includegraphics[width=0.75\linewidth]{figures/classification_alpha.pdf}\\[0.5em]
+\includegraphics[width=0.75\linewidth]{figures/segmentation_alpha.pdf}
+\caption{Per-layer trained $\alpha$ for both DyT variants. Top: classification (ViT-B/16, 25 DyT modules). Bottom: segmentation (SegFormer-B0, 30 DyT modules). The horizontal line at $\alpha_0 = 0.5$ marks initialization.}
+\label{fig:alpha}
+\end{figure*}
 
-[Placeholder: discuss whether DyT converges smoothly, lags behind LN, catches up later, or becomes unstable.]
-
-\subsection{Qualitative segmentation masks}
-\label{subsec:qual}
-
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\fbox{\rule{0pt}{1.8in}\rule{0.95\linewidth}{0pt}}
-\caption{Placeholder for qualitative segmentation masks. Use the same validation images for all variants; stack rows: input image, ground truth, LN prediction, full-DyT prediction, and attention-DyT prediction.}
-\label{fig:qualitative}
-\end{figure}
+\includegraphics[width=0.75\linewidth]{figures/classification_saturation.pdf}\\[0.5em]
+\includegraphics[width=0.75\linewidth]{figures/segmentation_saturation.pdf}
+\caption{Per-layer DyT saturation fraction, time-averaged over recorded forward passes during training and evaluation as the fraction of activations satisfying $|\tanh(\alpha x)| > 0.95$. Top: classification (ViT-B/16). Bottom: segmentation (SegFormer-B0). High values indicate feature-range collapse; low values indicate the layer operates near the linear regime of $\tanh$.}
+\label{fig:saturation}
+\end{figure*}
 
-Qualitative examples are important because mIoU alone may hide the type of error introduced by a normalization replacement. The final analysis should focus on boundary quality, small objects, rare classes, and whether DyT produces spatially coherent masks or noisier predictions.
+\Cref{fig:alpha} shows an asymmetry between the two ViT DyT variants. DyT default $\alpha$ stays nearly frozen at the initialization $\alpha_0=0.5$ across all 25 layers, whereas DyT affine $\alpha$ drifts above 0.5 in the early and middle blocks and spikes at the final pre-classifier layer. DyT default therefore did not learn to adjust $\alpha$, consistent with its near-zero classification progress; the affine variant trained $\alpha$ in addition to $\gamma$ and $\beta$. Segmentation $\alpha$ drifts in both variants (per-run means 0.520--0.531), so the segmentation failure is not a case of $\alpha$ failing to update.
 
-\subsection{Activation diagnostics}
-\label{subsec:activation}
+Saturation in \cref{fig:saturation} explains the ViT contrast. DyT default saturation grows with depth and peaks near 0.96 at the final pre-classifier layer (mean 0.76, 21 of 25 layers above 0.5), while DyT affine is uniformly low (mean 0.17, only 4 of 25 layers above 0.5). Copying $\gamma, \beta$ therefore keeps every ViT layer in $\tanh$'s near-linear regime, consistent with the classification recovery. SegFormer behaves differently. Both DyT variants run at very low saturation (means 0.007 and 0.060), so $|\alpha x|$ is small for nearly all activations; first-order Taylor expansion of $\tanh$ around 0 gives $\tanh(\alpha x) \approx \alpha x$, so DyT collapses to a per-channel affine map:
+\begin{equation}
+    \dyt(x) \;\approx\; \gamma \odot (\alpha x) + \beta \;=\; (\alpha \gamma) \odot x + \beta .
+    \label{eq:dyt-linear}
+\end{equation}
+That this affine-only configuration still fails to learn segmentation rules out $\tanh$ clipping as the SegFormer failure mode. The remaining structural difference between DyT-affine and LayerNorm in this regime is per-sample mean-centering and variance-scaling.
 
-\begin{figure}[t]
-\centering
-\fbox{\rule{0pt}{1.2in}\rule{0.95\linewidth}{0pt}}
-\caption{Placeholder for DyT activation diagnostics, such as saturation rate or activation histograms from early and late backbone stages.}
-\label{fig:activation}
-\end{figure}
-
-Because DyT uses a bounded tanh transformation, activation diagnostics can help explain performance differences. If many activations saturate, then DyT may reduce feature dynamic range and damage fine segmentation details. If saturation remains moderate, then performance differences are more likely due to optimization or local changes in attention behavior rather than a simple collapse of representation scale.
-
-\section{Discussion and Limitations}
+\section{Discussion}
 \label{sec:discussion}
 
-The central interpretation will depend on the final results. If DyT performs close to the LayerNorm baseline, the result would support the claim that normalization-free transformer designs can transfer beyond image-level recognition into dense prediction. This would be notable because segmentation requires spatially detailed features and multiscale fusion. If DyT performs worse but remains trainable, the result would still be useful: it would suggest that DyT is a plausible replacement but may require longer schedules, different initialization, or selective use in segmentation backbones. If DyT fails to converge or produces much worse masks, the project would identify dense prediction as a boundary case for normalization-free transformer claims.
+The post-hoc and from-initialization regimes are genuinely different problems. Downstream layers in a pretrained transformer were optimized against LayerNorm's per-token mean-centered and variance-scaled features; swapping LayerNorm for DyT replaces this per-token adjustment with a fixed channel-wise affine, so the downstream weights begin fine-tuning from inputs whose first and second moments no longer match what they were trained on, and the present results show that the budgets we tested do not close that mismatch. The classification-versus-segmentation asymmetry is consistent with Ranftl et al.'s observation~\cite{ranftl2021dpt} that dense prediction depends on feature granularity that classification can discard: copying $\gamma, \beta$ is enough to recover a useful image-level representation but not enough to recover the spatially detailed features SegFormer needs. Concretely, LayerNorm's per-token mean-centering and variance-scaling adapts to each token's mean and variance over the channel dimension, while DyT's channel-wise $\gamma, \beta$ apply the same transform across all tokens; the per-token adaptation is what \cref{eq:dyt-linear} loses.
 
-Several limitations should be stated clearly. First, this is a short-schedule class project, not a full benchmark reproduction. Second, the main model is SegFormer-B0, so the conclusions may not transfer directly to larger SegFormer variants, ViT-based segmentation pipelines, Mask2Former, or convolutional segmentation systems. Third, DyT is tested mostly as a drop-in replacement. A better DyT segmentation model might require tuning $\alpha$, changing learning rates, modifying residual scaling, or using selective replacement rather than full-backbone replacement. Fourth, if the final dataset is reduced for compute reasons, mIoU values should be interpreted as within-project comparisons rather than benchmark claims.
+The above conclusions are drawn within the ViT-B/16 and SegFormer-B0 scale. Larger encoders may exhibit different per-token feature scales and different depth-dependent saturation profiles than \cref{fig:saturation} shows, so the pattern reported here should not be extrapolated upward without retesting. We also do not claim that DyT is intrinsically weak: the original paper shows strong from-initialization results across many settings. Within the post-hoc setting, our results identify a baseline that several follow-up directions can be measured against. Compute scaling is the most direct: the original DyT evaluation runs roughly an order of magnitude longer than our fine-tunes, so a longer schedule, especially on segmentation, would test whether the gap we report is fundamental or budget-bounded. Within the same budget, several adaptations are natural: site-selective replacement that excludes the worst sites (the final pre-classifier LN, where saturation peaks); activation-matching initialization that calibrates $\alpha, \gamma, \beta$ to the pretrained LayerNorm's input-output statistics on the first batches of fine-tuning; and DyT variants that restore some form of per-token scaling, directly addressing the candidate explanation above. Broader testing on Swin, MAE-pretrained ViT, and dense-prediction backbones beyond MiT-B0 would clarify how general the classification-versus-segmentation asymmetry is.
 
-The most important future work would be to repeat the study with longer ADE20K training, larger SegFormer variants, and additional dense prediction tasks such as instance segmentation or depth estimation. Another useful extension would be a layer-wise analysis of where DyT works best: early stages may require local spatial detail, while later stages may tolerate more aggressive activation compression. Finally, comparing DyT with other normalization alternatives such as RMSNorm or GroupNorm would help separate the effect of removing statistics from the effect of adding a bounded nonlinearity.
+\subsection{Ethical considerations}
+\label{subsec:ethics}
 
-\section{Ethical Considerations}
-\label{sec:ethics}
-
-This project does not introduce a new dataset, collect human-subject data, use personally identifiable information, or deploy a model in any real application, so its direct ethical risks are limited. However, semantic segmentation is a general-purpose computer vision capability that can be used in settings with real societal consequences, including autonomous driving, medical imaging, surveillance, remote sensing, and public-space analytics. Any architectural change that affects segmentation reliability could therefore matter if it is later used in high-stakes systems. This is a generic dual-use concern: even small architectural changes can be inherited by deployments the original authors did not intend. A model that performs well on average may still fail on rare classes, small objects, unusual lighting conditions, or underrepresented environments.
-
-The project also raises reporting and reproducibility concerns. Because the experiments use a shortened training budget, it would be misleading to present the results as full benchmark numbers. The final report should state the exact dataset split, training iterations, hardware, random seed, and any failed runs. If DyT performs worse than LayerNorm, that negative result should not be hidden; it is directly relevant to the research question. If DyT performs similarly, the claim should still be limited to the tested model, dataset, and schedule.
-
-Finally, compute transparency matters. Even small segmentation experiments consume GPU resources, and larger transformer segmentation studies can be expensive. This project reports the exact hardware, training schedule, total wall-clock training time, and approximate total project compute where possible. The goal is not to argue that DyT is universally safer, fairer, or more efficient, but to evaluate a specific architectural substitution in a bounded setting.
+This work introduces no dataset, no human-subject data, and no deployed model. Image classification and semantic segmentation are nevertheless used in autonomous driving, medical imaging, surveillance, and remote sensing, where aggregate metrics can mask failures on rare classes and underrepresented environments, and an unreliable backbone can be misused when downstream decisions inherit those failures unchecked. Per-class IoU and per-class accuracy should accompany aggregate numbers before any DyT-substituted backbone is deployed, and a DyT replacement should not be adopted on from-initialization evidence alone without matched-accuracy validation against the LayerNorm baseline on the target dataset.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-This project studies whether Dynamic Tanh can replace LayerNorm in transformer-based semantic segmentation. The motivation is that DyT has recently challenged the assumed necessity of normalization in transformers, but dense prediction remains a demanding test because segmentation requires spatially precise, multiscale features. The proposed study uses SegFormer-B0 in MMSegmentation and compares a LayerNorm baseline with DyT replacement variants under matched short-schedule training. [Placeholder: insert final result summary once experiments finish.] Regardless of whether DyT matches, slightly degrades, or fails relative to LayerNorm, the experiment provides a controlled answer about how far normalization-free transformer ideas transfer to semantic segmentation.
+Dynamic Tanh was validated as a normalization replacement when present from the start of training. This paper tests the more practical post-hoc setting: replacing LayerNorm inside a pretrained vision encoder and relying on downstream fine-tuning to recover performance. Across ViT-B/16 classification and SegFormer-B0 segmentation, full replacement is not competitive with the LayerNorm baseline. Affine preservation substantially improves classification over DyT default, but it still leaves a large accuracy gap; in segmentation, the same adaptation does not help.
 
+The main contribution is a bounded negative result with diagnostics. Post-hoc DyT failure is not a single phenomenon: ViT DyT default failure is consistent with tanh saturation, while SegFormer failure occurs despite low saturation and points toward sensitivity to the loss of per-token mean and variance. Follow-up directions, from compute scaling to site-selective replacement and activation-matching initialization, are detailed in \cref{sec:discussion}.
+
+\section{AI Use Statement}
+
+Claude Code and Codex were used to assist in brainstorming methodology, finding relevant literature, and LaTex formatting tasks. 
 {\small
 \bibliographystyle{ieee_fullname}
 \bibliography{references}
