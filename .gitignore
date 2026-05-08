@@ -4,16 +4,12 @@ __pycache__/
 .venv/
 .DS_Store
 
-runs/
+# model checkpoints (large, regenerable from notebook)
 *.pt
 *.pth
 *.ckpt
 
-figures/*.png
-figures/*.pdf
-figures/*.json
-!figures/.gitkeep
-
+# latex build artifacts
 *.aux
 *.bbl
 *.blg

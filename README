@@ -1,0 +1,4 @@
+# Post-Hoc DyT: LayerNorm Replacement in Pretrained Vision Encoders
+
+Run experiments in Colab:
+https://colab.research.google.com/github/zhizhen-kyle-luo/6s058-final-project/blob/main/colab_train.ipynb
