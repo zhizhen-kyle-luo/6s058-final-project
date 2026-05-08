@@ -11,6 +11,7 @@ https://colab.research.google.com/github/zhizhen-kyle-luo/6s058-final-project/bl
 
 ```
 .
+├── CV_Final.pdf         compiled paper PDF
 ├── main.tex             CVPR-style paper source
 ├── references.bib       bibliography
 ├── cvpr.sty             CVPR latex style
