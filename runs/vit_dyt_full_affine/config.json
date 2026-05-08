@@ -1,0 +1,21 @@
+{
+  "task": "classification",
+  "variant": "dyt_full",
+  "run_name": "vit_dyt_full_affine",
+  "use_amp": true,
+  "iters": 3000,
+  "batch": 64,
+  "crop": 224,
+  "lr": 5e-05,
+  "weight_decay": 0.01,
+  "warmup_iters": 200,
+  "eval_every": 500,
+  "seed": 42,
+  "pretrained": "google/vit-base-patch16-224",
+  "num_classes": 100,
+  "ignore_index": -100,
+  "subset_train": 2000,
+  "subset_val": 500,
+  "dyt_alpha_init": 0.5,
+  "dyt_preserve_ln_affine": true
+}

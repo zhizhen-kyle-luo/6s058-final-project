@@ -1,0 +1,21 @@
+{
+  "task": "segmentation",
+  "variant": "dyt_full",
+  "run_name": "seg_dyt_full_fresh",
+  "use_amp": true,
+  "iters": 5000,
+  "batch": 4,
+  "crop": 512,
+  "lr": 6e-05,
+  "weight_decay": 0.01,
+  "warmup_iters": 200,
+  "eval_every": 500,
+  "seed": 42,
+  "pretrained": "nvidia/mit-b0",
+  "num_classes": 150,
+  "ignore_index": 255,
+  "subset_train": 2000,
+  "subset_val": 500,
+  "dyt_alpha_init": 0.5,
+  "dyt_preserve_ln_affine": false
+}

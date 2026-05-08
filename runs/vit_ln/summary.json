@@ -1,0 +1,15 @@
+{
+  "run_name": "vit_ln",
+  "task": "classification",
+  "variant": "ln",
+  "data_source": "uoft-cs/cifar100",
+  "iters": 3000,
+  "best_primary": 0.9291,
+  "metric_name": "top1",
+  "num_replaced": 0,
+  "replaced_modules": [],
+  "final_alphas": {},
+  "final_saturation": {},
+  "dyt_alpha_init": 0.5,
+  "dyt_preserve_ln_affine": false
+}

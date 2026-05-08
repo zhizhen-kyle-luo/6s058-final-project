@@ -1,0 +1,56 @@
+[
+  {
+    "run": "seg_dyt_full_affine",
+    "task": "segmentation",
+    "variant": "dyt_full",
+    "preserve_affine": true,
+    "metric": "miou",
+    "best": 0.0099,
+    "n_replaced": 30
+  },
+  {
+    "run": "seg_dyt_full_fresh",
+    "task": "segmentation",
+    "variant": "dyt_full",
+    "preserve_affine": false,
+    "metric": "miou",
+    "best": 0.0138,
+    "n_replaced": 30
+  },
+  {
+    "run": "seg_ln",
+    "task": "segmentation",
+    "variant": "ln",
+    "preserve_affine": false,
+    "metric": "miou",
+    "best": 0.0765,
+    "n_replaced": 0
+  },
+  {
+    "run": "vit_dyt_full_affine",
+    "task": "classification",
+    "variant": "dyt_full",
+    "preserve_affine": true,
+    "metric": "top1",
+    "best": 0.4832,
+    "n_replaced": 25
+  },
+  {
+    "run": "vit_dyt_full_fresh",
+    "task": "classification",
+    "variant": "dyt_full",
+    "preserve_affine": false,
+    "metric": "top1",
+    "best": 0.045,
+    "n_replaced": 25
+  },
+  {
+    "run": "vit_ln",
+    "task": "classification",
+    "variant": "ln",
+    "preserve_affine": false,
+    "metric": "top1",
+    "best": 0.9291,
+    "n_replaced": 0
+  }
+]

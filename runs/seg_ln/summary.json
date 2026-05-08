@@ -1,0 +1,15 @@
+{
+  "run_name": "seg_ln",
+  "task": "segmentation",
+  "variant": "ln",
+  "data_source": "merve/scene_parse_150",
+  "iters": 5000,
+  "best_primary": 0.07649524509906769,
+  "metric_name": "miou",
+  "num_replaced": 0,
+  "replaced_modules": [],
+  "final_alphas": {},
+  "final_saturation": {},
+  "dyt_alpha_init": 0.5,
+  "dyt_preserve_ln_affine": false
+}
