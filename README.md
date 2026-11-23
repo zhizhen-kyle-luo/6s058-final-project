@@ -1,6 +1,6 @@
 # Post-Hoc DyT: LayerNorm Replacement in Pretrained Vision Encoders
 
-Spring 2026 Final project for 6.S058 by Kyle Luo.
+Spring 2026 Final project for 6.S058 by Kyle Luo. Read the paper: [CV_Final.pdf](CV_Final.pdf)
 
 This project tests whether Dynamic Tanh (DyT) can replace LayerNorm inside a LayerNorm-pretrained vision encoder via post-hoc swap followed by fine-tuning. Two backbones are evaluated: ViT-B/16 fine-tuned on CIFAR-100, and SegFormer-B0 fine-tuned on a 2000-image ADE20K subset. We compare the paper-default DyT initialization against an affine-preserving variant that copies the pretrained LayerNorm γ, β into DyT.
 
